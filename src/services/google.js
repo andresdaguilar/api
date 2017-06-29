@@ -1,10 +1,23 @@
 const cheerio = require('cheerio');
 const path = require('path');
+const _ = require('lodash');
 const fs = require('fs');
 const google = require('googleapis');
-var googleAuth = require('google-auth-library');
+const googleAuth = require('google-auth-library');
 const SCOPES = ['https://www.googleapis.com/auth/drive'];
 const drive = google.drive('v3');
+const azure = require('azure-storage');
+const fileService = azure.createFileService();
+const blobService = azure.createBlobService();
+const mime = require('mime');
+const Promise = require("bluebird");
+const streamBuffers = require('stream-buffers');
+import Jimp from 'jimp';
+
+
+const createContainerIfNotExists = Promise.promisify(blobService.createContainerIfNotExists).bind(blobService);
+const createAppendBlobFromText = Promise.promisify(blobService.createAppendBlobFromText).bind(blobService);
+const getBlobMetadata = Promise.promisify(blobService.getBlobMetadata).bind(blobService);
 
 function retrieveAllFiles(auth, folder) {
     return new Promise((resolve, reject) => {
@@ -91,10 +104,52 @@ function exportFile(auth, fileId) {
             });
 
             // passing images through filters
-            $('img').each((i, o)=>{
-                let oldSrc = o.attribs.src;
-                o.attribs.src = `/api/parse-image?url=${encodeURIComponent(oldSrc)}`;
-            })
+            let a = $('img').map((i, o) => {
+                let src = o.attribs.src;
+                return { src, obj: $(o) };
+            });
+            let promises = _.map(a, (i) => {
+                return new Promise((_resolve, _reject) => {
+                    Jimp.read(i.src, function (err, image) {
+                        if (err) throw err;
+
+                        let width = image.bitmap.width;
+                        if (width > 700) {
+                            width = 700;
+                            let ratio = image.bitmap.width / image.bitmap.height;
+                            let height = width * ratio;
+                            image = image.scaleToFit(width, height);
+                        }
+
+                        if ((image.bitmap.width / image.bitmap.height) < Math.sqrt(5)) {
+                            image = image.crop(0, 0, image.bitmap.width, image.bitmap.width / Math.sqrt(5));
+                        } else {
+                            image = image.scaleToFit(image.bitmap.width, image.bitmap.width / Math.sqrt(5));
+                        }
+
+                        image
+                            //.resize(256, 256)            // resize
+                            .quality(50)                 // set JPEG quality
+                            .getBuffer('image/jpeg', (a, b) => {
+                                let hash = image.hash();
+
+                                createContainerIfNotExists('ri-images')
+                                    .then((d) => {
+                                        return createAppendBlobFromText('ri-images', `${hash}.jpg`, b, b.length);
+                                    })
+                                    .then((f) => {
+                                        return getBlobMetadata('ri-images', `${hash}.jpg`);
+                                    }).then((m) => {
+                                        _resolve({
+                                            newSrc: blobService.getUrl('ri-images', m.name),
+                                            ...i
+                                        });
+                                    })
+                            }); // save
+                    });
+                })
+            });
+
 
             // Removing unnecessary spans
             $('* > span').each((i, e) => {
@@ -117,6 +172,10 @@ function exportFile(auth, fileId) {
             $('p > span:empty').remove();
             $('p:empty').remove();
             $('div:empty').remove();
+            $('sup:empty').remove();
+            $('sub:empty').remove();
+            $('em:empty').remove();
+            $('u:empty').remove();
 
             // Removing GDocs Comments
             $('div p a[id]').parent().parent().remove();
@@ -128,7 +187,14 @@ function exportFile(auth, fileId) {
                 }
             })
 
-            resolve($('body').html());
+
+            Promise.all(promises).then((p) => {
+
+                p.forEach((v) => {
+                    $(`[src='${v.src}']`).attr('src', v.newSrc);
+                })
+                resolve($('body').html());
+            });
         });
     });
 }
@@ -211,6 +277,23 @@ function loadKey() {
 }
 
 export default {
+    utils: {
+        generateDocument: (id) => {
+            return loadKey()
+                .then((auth) => exportFile(auth, id).then((h) => {
+                    const $ = cheerio.load(h);
+                    const title = $('.title').remove();
+                    const subtitle = $('.subtitle').remove();
+                    const hero = $('img', subtitle).remove();
+                    return {
+                        title: title.html(),
+                        lede: subtitle.html(),
+                        hero: hero.attr('src'),
+                        body: $('body').html()
+                    }
+                }));
+        }
+    },
     driveService: {
         find: (params) => {
             return loadKey()
@@ -222,3 +305,4 @@ export default {
         }
     }
 };
+

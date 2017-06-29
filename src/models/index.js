@@ -5,6 +5,7 @@ var articleSchema = new Schema({
     title: String,
     author: String,
     lede: String,
+    hero: String,
     body: String,
     translations: [{
         title: String,
