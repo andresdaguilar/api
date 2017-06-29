@@ -3,6 +3,7 @@ import autopopulate from 'mongoose-autopopulate'
 
 var articleSchema = new Schema({
     title: String,
+    slug: {type: String, unique: true},
     author: String,
     lede: String,
     hero: String,

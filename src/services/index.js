@@ -2,6 +2,7 @@ import models from '../models';
 import mongoose from 'mongoose';
 import feathers from 'feathers';
 import googleServices from './google';
+import _ from 'lodash';
 const request = require('request-promise');
 
 const service = require('feathers-mongoose');
@@ -28,12 +29,13 @@ module.exports = function () {
   });
 
   app.get('/api/articles/:id/preview', (rq, rs) => {
-    Article.findById(rq.params.id).then((a) => {
-        rs.render('preview-article.mustache', a);
+    Article.find({slug: rq.params.id}).then((a) => {
+      console.log(a);
+    rs.render('preview-article.mustache', _.first(a));
     })
   });
   app.use('/api/drive', driveService);
-  app.use('/api/articles', service({ Model: Article }));
+  app.use('/api/articles', service({ Model: Article, id: 'slug' }));
   app.use('/api/categories', service({ Model: Category }));
   app.use('/api/countries', service({ Model: Country }));
   app.use('/api/country-categories', service({ Model: CountryCategory }));

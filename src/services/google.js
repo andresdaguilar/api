@@ -12,6 +12,7 @@ const blobService = azure.createBlobService();
 const mime = require('mime');
 const Promise = require("bluebird");
 const streamBuffers = require('stream-buffers');
+const slugify = require('speakingurl');
 import Jimp from 'jimp';
 
 
@@ -286,6 +287,7 @@ export default {
                     const subtitle = $('.subtitle').remove();
                     const hero = $('img', subtitle).remove();
                     return {
+                        slug: slugify(title.html()),
                         title: title.html(),
                         lede: subtitle.html(),
                         hero: hero.attr('src'),
