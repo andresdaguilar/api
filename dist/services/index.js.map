@@ -1,0 +1,1 @@
+{"version":3,"sources":["../../src/services/index.js"],"names":["module","exports","app"],"mappings":";;AAAA;;;;;;AAEAA,OAAOC,OAAP,GAAiB,YAAY;AAC3B,MAAMC,MAAM,IAAZ,CAD2B,CACT;AACnB,CAFD","file":"index.js","sourcesContent":["import models from '../models';\n\nmodule.exports = function () {\n  const app = this; // eslint-disable-line no-unused-vars\n};\n"]}
