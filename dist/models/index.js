@@ -71,10 +71,12 @@ var CountryCategory = function CountryCategory(db) {
     return db.model('CountryCategory', countryCategorySchema);
 };
 
-exports.default = {
-    Article: Article,
-    Category: Category,
-    Country: Country,
-    CountryCategory: CountryCategory
+exports.default = function (db) {
+    return {
+        Article: Article(db),
+        Category: Category(db),
+        Country: Country(db),
+        CountryCategory: CountryCategory(db)
+    };
 };
 //# sourceMappingURL=index.js.map

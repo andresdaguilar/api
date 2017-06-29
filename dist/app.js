@@ -19,11 +19,18 @@ var notFound = require('feathers-errors/not-found');
 var middleware = require('./middleware');
 var services = require('./services');
 var appHooks = require('./app.hooks');
+var mustacheExpress = require('mustache-express');
 
 var app = feathers();
 
+app.engine('mustache', mustacheExpress());
+
+app.set('view engine', 'mustache');
+app.set('views', __dirname + '/views');
+
 // Load app configuration
 app.configure(configuration());
+
 // Enable CORS, security, compression, favicon and body parsing
 app.use(cors());
 app.use(helmet());
