@@ -22,7 +22,7 @@
     "npm": ">= 3.0.0"
   },
   "scripts": {
-    "dist": "npm install -g babel-cli nodemon eslint mocha && npm run build; npm install;",
+    "postinstall": "npm install -g babel-cli nodemon eslint mocha && npm run build",
     "test": "npm run eslint && npm run mocha",
     "dev": "nodemon -w src --exec \"babel-node src --presets es2015,stage-0\"",
     "eslint": "eslint src/. test/. --config .eslintrc.json",
