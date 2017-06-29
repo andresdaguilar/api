@@ -90,6 +90,12 @@ function exportFile(auth, fileId) {
                 }
             });
 
+            // passing images through filters
+            $('img').each((i, o)=>{
+                let oldSrc = o.attribs.src;
+                o.attribs.src = `/api/parse-image?url=${encodeURIComponent(oldSrc)}`;
+            })
+
             // Removing unnecessary spans
             $('* > span').each((i, e) => {
                 let { parent, children } = e;
