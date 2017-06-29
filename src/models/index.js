@@ -32,7 +32,7 @@ var countrySchema = new Schema({
     }],
     content: [{
         category: { type: Schema.Types.ObjectId, ref: 'Category', autopopulate: true, required: true },
-        articles: [{ type: Schema.Types.ObjectId, ref: 'Article', autopopulate: {'select': ['title', 'lede', 'translations.lede', "translations.language", "translations.title"]} },],
+        articles: [{ type: Schema.Types.ObjectId, ref: 'Article', autopopulate: { 'select': ['title', 'lede', 'translations.lede', "translations.language", "translations.title"] } },],
     }]
 });
 countrySchema.plugin(autopopulate);
@@ -51,9 +51,9 @@ const Category = (db) => db.model('Category', categorySchema);
 const Country = (db) => db.model('Country', countrySchema);
 const CountryCategory = (db) => db.model('CountryCategory', countryCategorySchema);
 
-export default {
-    Article,
-    Category,
-    Country,
-    CountryCategory,
-};
+export default (db) => ({
+    Article: Article(db),
+    Category: Category(db),
+    Country: Country(db),
+    CountryCategory: CountryCategory(db),
+});
