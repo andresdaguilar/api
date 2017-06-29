@@ -53,9 +53,7 @@
     "mustache-express": "^1.2.5",
     "nodemon": "^1.11.0",
     "serve-favicon": "^2.4.3",
-    "winston": "^2.3.1"
-  },
-  "devDependencies": {
+    "winston": "^2.3.1",
     "babel-cli": "^6.9.0",
     "babel-core": "^6.9.0",
     "babel-preset-es2015": "^6.9.0",
