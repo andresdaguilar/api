@@ -28,7 +28,8 @@
     "start": "node dist",
     "build": "babel src -s -D -d dist --presets es2015,stage-0",
     "prestart": "npm run -s build",
-    "mocha": "mocha test/ --recursive"
+    "mocha": "mocha test/ --recursive",
+    "postinstall": "npm run build"
   },
   "dependencies": {
     "body-parser": "^1.17.2",
