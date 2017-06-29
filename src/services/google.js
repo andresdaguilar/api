@@ -154,13 +154,8 @@ const secrets = path.join(root, 'secrets.json');
 
 function loadKey() {
     return new Promise((res, rej) => {
-        fs.readFile(secrets, (err, content) => {
-            if (err) {
-                console.log('Error loading client secret file: ' + err);
-                rej(err);
-            }
-
-            var key = JSON.parse(content);
+        if (process.env.GOOGLE_SECRETS) {
+            var key = JSON.parse(process.env.GOOGLE_SECRETS);
             var jwtClient = new google.auth.JWT(
                 key.client_email,
                 null,
@@ -177,8 +172,35 @@ function loadKey() {
 
                 }
                 res(jwtClient);
+
             });
-        });
+        } else {
+            fs.readFile(secrets, (err, content) => {
+                if (err) {
+                    console.log('Error loading client secret file: ' + err);
+                    rej(err);
+                }
+
+                var key = JSON.parse(content);
+                var jwtClient = new google.auth.JWT(
+                    key.client_email,
+                    null,
+                    key.private_key,
+                    SCOPES,
+                    null
+                );
+
+                jwtClient.authorize(function (err, tokens) {
+                    if (err) {
+                        console.log(err);
+
+                        rej(err);
+
+                    }
+                    res(jwtClient);
+                });
+            });
+        }
     });
 }
 
