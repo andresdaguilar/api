@@ -36,7 +36,7 @@ module.exports = function () {
   });
   app.use('/api/drive', driveService);
   app.use('/api/articles', service({ Model: Article, id: 'slug' }));
-  app.use('/api/categories', service({ Model: Category }));
-  app.use('/api/countries', service({ Model: Country }));
+  app.use('/api/categories', service({ Model: Category, id: 'slug'  }));
+  app.use('/api/countries', service({ Model: Country, id: 'slug'  }));
   app.use('/api/country-categories', service({ Model: CountryCategory }));
 };

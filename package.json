@@ -21,12 +21,11 @@
     "npm": ">= 3.0.0"
   },
   "scripts": {
-    "postinstall": "npm install -g babel-cli  && npm run build",
     "test": "npm run eslint && npm run mocha",
     "dev": "nodemon -w src --exec \"babel-node src --presets es2015,stage-0\"",
     "eslint": "eslint src/. test/. --config .eslintrc.json",
     "start": "node dist",
-    "build": "babel src -s -D -d dist --presets es2015,stage-0",
+    "build": "./node_modules/.bin/babel src -s -D -d dist --presets es2015,stage-0",
     "prestart": "npm run -s build",
     "mocha": "mocha test/ --recursive"
   },

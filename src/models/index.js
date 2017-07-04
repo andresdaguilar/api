@@ -20,6 +20,7 @@ articleSchema.plugin(autopopulate);
 
 var categorySchema = new Schema({
     name: String,
+    slug: {type: String, unique: true},
     translations: [{
         language: String,
         name: String,
@@ -28,6 +29,7 @@ var categorySchema = new Schema({
 
 var countrySchema = new Schema({
     name: String,
+    slug: {type: String, unique: true},
     translations: [{
         language: String,
         name: String,
