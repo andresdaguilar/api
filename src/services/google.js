@@ -24,12 +24,13 @@ function retrieveAllFiles(auth, folder) {
     return new Promise((resolve, reject) => {
         var result = []
         var retrievePageOfFiles = function (err, resp) {
-            console.log(resp.files)
+            console.log(err)
             result = result.concat(resp.files);
             var nextPageToken = resp.nextPageToken;
             if (nextPageToken) {
                 request = drive.files.list({
                     auth: auth,
+                    fields: 'nextPageToken, files(id, name, kind, mimeType, parents)',
                     'pageToken': nextPageToken
                 }, retrievePageOfFiles);
             } else {
@@ -39,10 +40,62 @@ function retrieveAllFiles(auth, folder) {
 
         var initialRequest = drive.files.list({
             auth: auth,
-            'q': `'${folder}' in parents`
+            fields: 'nextPageToken, files(id, name, kind, mimeType, parents)',
         }, retrievePageOfFiles);
     });
 
+}
+
+async function recurse(auth, root) {
+    const translateType = (t) => {
+        switch (t) {
+            case "application/vnd.google-apps.folder":
+                return "folder";
+            case "application/vnd.google-apps.document":
+                return "document";
+            default:
+                return "file"
+        }
+    }
+    let files = await retrieveAllFiles(auth, root).map(f => {
+        f.children = [];
+        return f;
+    });
+
+    let fileDictionary = _.keyBy(files, (i) => i.id);
+    for (let file of files) {
+        let parentId = _.first(file.parents);
+        let parent = fileDictionary[parentId];
+        if (parent) {
+            parent.children.push(fileDictionary[file.id]);
+        }
+
+        file.type = translateType(file.mimeType);
+        file.slug = slugify(file.name);
+    }
+
+    for (let key of _.keys(fileDictionary)) {
+        if ((fileDictionary[key].parents || []).indexOf(root) === -1) {
+            delete fileDictionary[key];
+        }
+    }
+
+    return fileDictionary;
+}
+
+function recurse1(auth, root) {
+    return new Promise((resolve, reject) => {
+        retrieveAllFiles(auth, root).then((children) => {
+            Promise.all(children.map((c, i) => {
+                return retrieveAllFiles(auth, c.id).then((g) => {
+                    children[i].children = g;
+                    return g;
+                });
+            })).then(() => {
+                resolve(children);
+            })
+        })
+    });
 }
 
 
@@ -299,11 +352,11 @@ export default {
     driveService: {
         find: (params) => {
             return loadKey()
-                .then((k) => retrieveAllFiles(k, "0B-lKSEVt5tJeamY2d3ZBRlJEMXc"));
+                .then((k) => recurse(k, "0B-lKSEVt5tJeamY2d3ZBRlJEMXc"));
         },
         get: (id, params) => {
             return loadKey()
-                .then((k) => exportFile(k, id));
+                .then((k) => retrieveAllFiles(k, id));
         }
     }
 };
