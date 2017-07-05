@@ -34,20 +34,21 @@ app.use(cors());
 app.use(helmet());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(favicon(path.join(app.get('public'), 'favicon.ico')));
-// Host the public folder
-app.use('/', feathers.static(app.get('public')));
 
 // Set up Plugins and providers
 app.configure(hooks());
 app.configure(rest());
 app.configure(socketio());
 
+// Host the public folder
+app.use('/', feathers.static(path.join(path.dirname(__dirname), 'client', 'build')));
+
 // Configure other middleware (see `middleware/index.js`)
 app.configure(middleware);
 // Set up our services (see `services/index.js`)
 app.configure(services);
 // Configure a middleware for 404s and the error handler
+
 app.use(notFound());
 app.use(handler());
 

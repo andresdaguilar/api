@@ -34,7 +34,7 @@ module.exports = function () {
     rs.render('preview-article.mustache', _.first(a));
     })
   });
-  app.use('/api/drive', driveService);
+  app.use('/api/drive', driveService(db));
   app.use('/api/articles', service({ Model: Article, id: 'slug' }));
   app.use('/api/categories', service({ Model: Category, id: 'slug'  }));
   app.use('/api/countries', service({ Model: Country, id: 'slug'  }));

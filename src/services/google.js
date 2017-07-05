@@ -14,7 +14,7 @@ const Promise = require("bluebird");
 const streamBuffers = require('stream-buffers');
 const slugify = require('speakingurl');
 import Jimp from 'jimp';
-
+import models from '../models';
 
 const createContainerIfNotExists = Promise.promisify(blobService.createContainerIfNotExists).bind(blobService);
 const createAppendBlobFromText = Promise.promisify(blobService.createAppendBlobFromText).bind(blobService);
@@ -24,7 +24,6 @@ function retrieveAllFiles(auth, folder) {
     return new Promise((resolve, reject) => {
         var result = []
         var retrievePageOfFiles = function (err, resp) {
-            console.log(err)
             result = result.concat(resp.files);
             var nextPageToken = resp.nextPageToken;
             if (nextPageToken) {
@@ -47,16 +46,6 @@ function retrieveAllFiles(auth, folder) {
 }
 
 async function recurse(auth, root) {
-    const translateType = (t) => {
-        switch (t) {
-            case "application/vnd.google-apps.folder":
-                return "folder";
-            case "application/vnd.google-apps.document":
-                return "document";
-            default:
-                return "file"
-        }
-    }
     let files = await retrieveAllFiles(auth, root).map(f => {
         f.children = [];
         return f;
@@ -68,9 +57,29 @@ async function recurse(auth, root) {
         let parent = fileDictionary[parentId];
         if (parent) {
             parent.children.push(fileDictionary[file.id]);
+            if (file.parents && file.parents.indexOf(root) == -1) {
+                file.parentSlug = slugify(parent.name);
+            }
         }
 
-        file.type = translateType(file.mimeType);
+        if (file.name.indexOf('L|') > -1) {
+            file.name = file.name.split('L|')[1].trim();
+            file.type = 'location';
+        } else {
+            if (file.mimeType == 'application/vnd.google-apps.folder') {
+                if (file.parents && file.parents.indexOf(root) > -1) {
+                    file.type = 'country';
+                } else {
+                    file.type = 'category';
+                }
+            } else if (file.mimeType == 'application/vnd.google-apps.document') {
+                file.type = 'article';
+            }
+        }
+
+        delete file.mimeType;
+        delete file.kind;
+
         file.slug = slugify(file.name);
     }
 
@@ -80,7 +89,12 @@ async function recurse(auth, root) {
         }
     }
 
-    return fileDictionary;
+
+
+    return _.flatMap(fileDictionary).map((f) => {
+        delete f.parents;
+        return f;
+    });
 }
 
 function recurse1(auth, root) {
@@ -349,15 +363,164 @@ export default {
                 }));
         }
     },
-    driveService: {
+    driveService: (db) => ({
         find: (params) => {
             return loadKey()
-                .then((k) => recurse(k, "0B-lKSEVt5tJeamY2d3ZBRlJEMXc"));
+                .then((k) => {
+                    return recurse(k, "0B-lKSEVt5tJeamY2d3ZBRlJEMXc").then(async (files) => {
+                        let countries = files;
+                        const removeChildren = (c) => {
+                            delete c.children;
+                            return c;
+                        };
+
+                        let firstLevel = _.flatten(countries.map((c) => c.children));
+                        let secondLevel = _.flatten(firstLevel.map((c) => c.children));
+                        let thirdLevel = _.flatten(secondLevel.map((c) => c.children));
+
+                        const { Country, Category, Article, Location } = models(db);
+                        const importCategories = async (categoryFolder) => {
+                            let obj = await Category.findOne({ slug: categoryFolder.slug });
+                            const { name, slug } = categoryFolder;
+
+                            if (!obj) {
+                                obj = new Category({ name, slug });
+                            }
+                            Object.assign(obj, { name, slug });
+
+                            await obj.save();
+                        }
+                        const generateCategoryContent = async (subFolder) => {
+                            let category = await Category.findOne({ slug: subFolder.slug });
+                            let articles = [];
+                            for (let articleFile of subFolder.children) {
+                                let article = await Article.findOne({ slug: articleFile.slug });
+                                articles.push(article);
+
+                                if (articleFile.slug && !article) {
+                                    console.log(articleFile.name, 'Is Missing!')
+                                }
+                            }
+
+                            return {
+                                category,
+                                articles
+                            };
+                        };
+
+                        for (let countryFolder in countries) {
+                            const { name, slug } = countryFolder;
+
+                            let obj = await Country.findOne({ slug: countryFolder.slug });
+                            if (!obj) {
+                                obj = new Country({ name, slug });
+                            }
+                            Object.assign(obj, { name, slug });
+
+                            await obj.save();
+                        }
+
+                        for (let categoryOrLocation of firstLevel) {
+                            if (categoryOrLocation.type == 'category') {
+                                await importCategories(categoryOrLocation)
+
+                            } else if (categoryOrLocation.type == 'location') {
+                                let obj = await Location.findOne({ slug: categoryOrLocation.slug });
+                                const { name, slug } = categoryOrLocation;
+
+                                if (!obj) {
+                                    obj = new Location({ name, slug });
+                                }
+                                Object.assign(obj, { name, slug });
+
+                                await obj.save();
+                            }
+                        }
+
+                        for (let categoryOrFile of secondLevel) {
+                            if (categoryOrFile.type == 'category') {
+                                await importCategories(categoryOrFile)
+                            }
+                        }
+
+                        let articles = _.flatten(secondLevel.concat(thirdLevel)).filter(c => c.type == 'article');
+
+                        for (let articleFile of articles) {
+                            let html = await exportFile(k, articleFile.id);
+
+                            const $ = cheerio.load(html);
+                            const title = $('.title').remove();
+                            const subtitle = $('.subtitle').remove();
+                            const hero = $('img', subtitle).remove();
+                            let articlePayload = {
+                                slug: slugify(articleFile.name),
+                                title: title.html(),
+                                lede: subtitle.html(),
+                                hero: hero.attr('src'),
+                                body: $('body').html()
+                            };
+
+
+                            let article = await Article.findOne({ slug: articlePayload.slug })
+                            if (!article) {
+                                article = new Article(articlePayload);
+                            }
+                            Object.assign(article, { ...articlePayload });
+
+                            await article.save();
+                        }
+
+
+
+
+                        let content = [];
+                        let locations = [];
+                        for (let countryFolder of countries) {
+                            let country = await Country.findOne({ slug: countryFolder.slug });
+                            country.content = [];
+                            for (let subFolder of countryFolder.children) {
+                                if (subFolder.type == 'category') {
+                                    const { category, articles } = await generateCategoryContent(subFolder)
+
+                                    country.content.push({
+                                        category: category._id,
+                                        articles: articles.filter(_.identity).map(a => a._id)
+                                    });
+                                } else if (subFolder.type == 'location') {
+                                    let location =  await Location.findOne({ slug: subFolder.slug });
+                                    if (!location) {
+                                        console.log('didnt find', subFolder.slug);
+                                        continue;
+                                    }
+                                    let locationPayload = {
+                                        location: location._id,
+                                        content: []
+                                    }
+                                    for (let subSubFolder of subFolder.children) {
+                                        const { category, articles } = await generateCategoryContent(subSubFolder)
+
+                                        locationPayload.content.push({
+                                            category: category._id,
+                                            articles: articles.filter(_.identity).map(a => a._id)
+                                        });
+                                    }
+
+                                    console.log(locationPayload);
+
+                                    country.locations.push(locationPayload);
+                                }
+                            }
+                            await country.save();
+                        }
+
+                        return countries;
+                    });
+                });
         },
         get: (id, params) => {
             return loadKey()
                 .then((k) => retrieveAllFiles(k, id));
         }
-    }
+    })
 };
 

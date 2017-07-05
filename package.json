@@ -22,7 +22,7 @@
   },
   "scripts": {
     "test": "npm run eslint && npm run mocha",
-    "dev": "nodemon -w src --exec \"babel-node src --presets es2015,stage-0\"",
+    "dev": "nodemon -w src -w client/src --exec \"babel-node src --presets es2015,stage-0 && bash -c 'cd client && node_modules/.bin/react-scripts build' \" ",
     "eslint": "eslint src/. test/. --config .eslintrc.json",
     "start": "node dist",
     "build": "./node_modules/.bin/babel src -s -D -d dist --presets es2015,stage-0",

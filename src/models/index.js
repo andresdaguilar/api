@@ -3,7 +3,7 @@ import autopopulate from 'mongoose-autopopulate'
 
 var articleSchema = new Schema({
     title: String,
-    slug: {type: String, unique: true},
+    slug: { type: String, unique: true },
     author: String,
     lede: String,
     hero: String,
@@ -20,7 +20,16 @@ articleSchema.plugin(autopopulate);
 
 var categorySchema = new Schema({
     name: String,
-    slug: {type: String, unique: true},
+    slug: { type: String, unique: true },
+    translations: [{
+        language: String,
+        name: String,
+    }]
+});
+
+var locationSchema = new Schema({
+    name: String,
+    slug: { type: String, unique: true },
     translations: [{
         language: String,
         name: String,
@@ -29,7 +38,7 @@ var categorySchema = new Schema({
 
 var countrySchema = new Schema({
     name: String,
-    slug: {type: String, unique: true},
+    slug: { type: String, unique: true },
     translations: [{
         language: String,
         name: String,
@@ -37,6 +46,13 @@ var countrySchema = new Schema({
     content: [{
         category: { type: Schema.Types.ObjectId, ref: 'Category', autopopulate: true, required: true },
         articles: [{ type: Schema.Types.ObjectId, ref: 'Article', autopopulate: { 'select': ['title', 'lede', 'translations.lede', "translations.language", "translations.title"] } },],
+    }],
+    locations: [{
+        location: { type: Schema.Types.ObjectId, ref: 'Location', autopopulate: true, required: true },
+        content: [{
+            category: { type: Schema.Types.ObjectId, ref: 'Category', autopopulate: true, required: true },
+            articles: [{ type: Schema.Types.ObjectId, ref: 'Article', autopopulate: { 'select': ['title', 'lede', 'translations.lede', "translations.language", "translations.title"] } },],
+        }]
     }]
 });
 countrySchema.plugin(autopopulate);
@@ -53,6 +69,7 @@ countryCategorySchema.plugin(autopopulate);
 const Article = (db) => db.model('Article', articleSchema);
 const Category = (db) => db.model('Category', categorySchema);
 const Country = (db) => db.model('Country', countrySchema);
+const Location = (db) => db.model('Location', locationSchema);
 const CountryCategory = (db) => db.model('CountryCategory', countryCategorySchema);
 
 export default (db) => ({
@@ -60,4 +77,5 @@ export default (db) => ({
     Category: Category(db),
     Country: Country(db),
     CountryCategory: CountryCategory(db),
+    Location: Location(db),
 });
