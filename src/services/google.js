@@ -505,8 +505,6 @@ export default {
                                         });
                                     }
 
-                                    console.log(locationPayload);
-
                                     country.locations.push(locationPayload);
                                 }
                             }

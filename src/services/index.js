@@ -29,15 +29,20 @@ module.exports = function () {
   });
 
   app.get('/api/articles/:id/preview', (rq, rs) => {
-    Article.find({slug: rq.params.id}).then((a) => {
+    Article.find({ slug: rq.params.id }).then((a) => {
       console.log(a);
-    rs.render('preview-article.mustache', _.first(a));
+      rs.render('preview-article.mustache', _.first(a));
     })
   });
   app.use('/api/drive', driveService(db));
-  app.use('/api/articles', service({ Model: Article, id: 'slug' }));
-  app.use('/api/categories', service({ Model: Category, id: 'slug'  }));
-  app.use('/api/countries', service({ Model: Country, id: 'slug'  }));
-  app.use('/api/locations', service({ Model: Location, id: 'slug'  }));
-  app.use('/api/country-categories', service({ Model: CountryCategory }));
+
+  const setUpWithSlugAndId = (url, model) => {
+    app.use(`/api/by-id/${url}`, service({ Model: model, id: '_id' }));
+    app.use(`/api/${url}`, service({ Model: model, id: 'slug' }));
+  };
+
+  setUpWithSlugAndId('articles', Article);
+  setUpWithSlugAndId('categories', Category);
+  setUpWithSlugAndId('countries', Country);
+  setUpWithSlugAndId('locations', Location);
 };
