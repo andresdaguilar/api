@@ -16,7 +16,6 @@ var articleSchema = new Schema({
     }],
     date: { type: Date, default: Date.now },
 });
-articleSchema.plugin(autopopulate);
 
 var categorySchema = new Schema({
     name: String,
@@ -44,18 +43,32 @@ var countrySchema = new Schema({
         name: String,
     }],
     content: [{
-        category: { type: Schema.Types.ObjectId, ref: 'Category', autopopulate: true, required: true },
-        articles: [{ type: Schema.Types.ObjectId, ref: 'Article', autopopulate: { 'select': ['title', 'lede', 'translations.lede', "translations.language", "translations.title"] } },],
+        category: { type: Schema.Types.ObjectId, ref: 'Category', },
+        articles: [{ type: Schema.Types.ObjectId, ref: 'Article', },],
     }],
     locations: [{
-        location: { type: Schema.Types.ObjectId, ref: 'Location', autopopulate: true, required: true },
+        location: { type: Schema.Types.ObjectId, ref: 'Location', },
         content: [{
-            category: { type: Schema.Types.ObjectId, ref: 'Category', autopopulate: true, required: true },
-            articles: [{ type: Schema.Types.ObjectId, ref: 'Article', autopopulate: { 'select': ['title', 'lede', 'translations.lede', "translations.language", "translations.title"] } },],
+            category: { type: Schema.Types.ObjectId, ref: 'Category', },
+            articles: [{ type: Schema.Types.ObjectId, ref: 'Article', },],
         }]
     }]
 });
-countrySchema.plugin(autopopulate);
+
+var populateCountry = function(next) {
+  this.populate('content.category');
+  this.populate('content.articles', ['slug', 'title', 'lede', 'translations.lede', "translations.language", "translations.title"]);
+
+  this.populate('locations.location');
+  this.populate('locations.content.category');
+  this.populate('locations.content.articles', ['slug', 'title', 'lede', 'translations.lede', "translations.language", "translations.title"]);
+
+  next();
+};
+
+countrySchema.
+  pre('findOne', populateCountry).
+  pre('find', populateCountry);
 
 
 var countryCategorySchema = new Schema({
@@ -68,14 +81,14 @@ countryCategorySchema.plugin(autopopulate);
 
 const Article = (db) => db.model('Article', articleSchema);
 const Category = (db) => db.model('Category', categorySchema);
-const Country = (db) => db.model('Country', countrySchema);
 const Location = (db) => db.model('Location', locationSchema);
 const CountryCategory = (db) => db.model('CountryCategory', countryCategorySchema);
+const Country = (db) => db.model('Country', countrySchema);
 
 export default (db) => ({
     Article: Article(db),
     Category: Category(db),
-    Country: Country(db),
     CountryCategory: CountryCategory(db),
     Location: Location(db),
+    Country: Country(db),
 });

@@ -408,7 +408,7 @@ export default {
                             };
                         };
 
-                        for (let countryFolder in countries) {
+                        for (let countryFolder of countries) {
                             const { name, slug } = countryFolder;
 
                             let obj = await Country.findOne({ slug: countryFolder.slug });

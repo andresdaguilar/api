@@ -10,7 +10,7 @@ const service = require('feathers-mongoose');
 module.exports = function () {
   const app = this; // eslint-disable-line no-unused-vars
   const db = mongoose.createConnection(process.env.DATABASE_URL || 'mongodb://localhost/content')
-  const { Article, Category, Country, CountryCategory } = models(db);
+  const { Article, Category, Country, CountryCategory, Location } = models(db);
   const { driveService, utils } = googleServices;
 
   app.get('/api/preview-html/:id', (rq, rs) => {
@@ -38,5 +38,6 @@ module.exports = function () {
   app.use('/api/articles', service({ Model: Article, id: 'slug' }));
   app.use('/api/categories', service({ Model: Category, id: 'slug'  }));
   app.use('/api/countries', service({ Model: Country, id: 'slug'  }));
+  app.use('/api/locations', service({ Model: Location, id: 'slug'  }));
   app.use('/api/country-categories', service({ Model: CountryCategory }));
 };
