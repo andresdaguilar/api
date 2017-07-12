@@ -1,5 +1,4 @@
-# api-v3.refugee.info
-
+# api
 > 
 
 ## About
@@ -14,7 +13,7 @@ Getting up and running is as easy as 1, 2, 3.
 2. Install your dependencies
 
     ```
-    cd path/to/api-v3.refugee.info; npm install
+    cd path/to/api; npm install
     ```
 
 3. Start your app
