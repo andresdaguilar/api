@@ -23,8 +23,11 @@ var categorySchema = new Schema({
     translations: [{
         language: String,
         name: String,
-    }]
+    }],
+    type: { type: String, default: "topic" },
+    home: Object,
 });
+
 
 var locationSchema = new Schema({
     name: String,
@@ -32,8 +35,11 @@ var locationSchema = new Schema({
     translations: [{
         language: String,
         name: String,
-    }]
+    }],
+    geo: [Number],
+    home: Object,
 });
+locationSchema.index({ geo: "2d" });
 
 var countrySchema = new Schema({
     name: String,
@@ -42,6 +48,8 @@ var countrySchema = new Schema({
         language: String,
         name: String,
     }],
+    geo: [Number],
+    home: Object,
     content: [{
         category: { type: Schema.Types.ObjectId, ref: 'Category', },
         articles: [{ type: Schema.Types.ObjectId, ref: 'Article', },],
@@ -54,21 +62,23 @@ var countrySchema = new Schema({
         }]
     }]
 });
+countrySchema.index({ geo: "2d" });
 
-var populateCountry = function(next) {
-  this.populate('content.category');
-  this.populate('content.articles', ['slug', 'title', 'lede', 'translations.lede', "translations.language", "translations.title"]);
 
-  this.populate('locations.location');
-  this.populate('locations.content.category');
-  this.populate('locations.content.articles', ['slug', 'title', 'lede', 'translations.lede', "translations.language", "translations.title"]);
+var populateCountry = function (next) {
+    this.populate('content.category');
+    this.populate('content.articles', ['slug', 'title', 'lede', 'translations.lede', "translations.language", "translations.title"]);
 
-  next();
+    this.populate('locations.location');
+    this.populate('locations.content.category');
+    this.populate('locations.content.articles', ['slug', 'title', 'lede', 'translations.lede', "translations.language", "translations.title"]);
+
+    next();
 };
 
 countrySchema.
-  pre('findOne', populateCountry).
-  pre('find', populateCountry);
+    pre('findOne', populateCountry).
+    pre('find', populateCountry);
 
 
 var countryCategorySchema = new Schema({

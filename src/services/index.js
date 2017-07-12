@@ -9,7 +9,7 @@ const service = require('feathers-mongoose');
 
 module.exports = function () {
   const app = this; // eslint-disable-line no-unused-vars
-  const db = mongoose.createConnection(process.env.DATABASE_URL || 'mongodb://localhost/content')
+  const db = mongoose.createConnection(process.env.DATABASE_URL || 'mongodb://refugee-info:o41Qy7cvGMtf0Tp4xDi9RMrVAl4VnBh9qDDF46rI0zp2SHP9ngPk8bxr07D1bbT7QlChqpUXj2BACowUJUdCEw==@refugee-info.documents.azure.com:10255/test-content?ssl=true&sslverifycertificate=false')
   const { Article, Category, Country, CountryCategory, Location } = models(db);
   const { driveService, utils } = googleServices;
 
@@ -34,15 +34,24 @@ module.exports = function () {
       rs.render('preview-article.mustache', _.first(a));
     })
   });
+  app.get('/api/locations/near/:coords', (rq, rs) => {
+    let coordinates = rq.params.coords.split(',').map(c => parseFloat(c.trim()));
+    const {params} = rq
+    Location.find({
+      geo: {
+        $nearSphere: coordinates,
+        $maxDistance: 10 / 6378,
+      },
+      ...params
+    }).then(l => {
+      rs.send(l);
+    }).catch((e) => rs.send(e))
+  });
   app.use('/api/drive', driveService(db));
 
-  const setUpWithSlugAndId = (url, model) => {
-    app.use(`/api/by-id/${url}`, service({ Model: model, id: '_id' }));
-    app.use(`/api/${url}`, service({ Model: model, id: 'slug' }));
-  };
+  app.use(`/api/articles`, service({ Model: Article, id: 'slug' }));
+  app.use(`/api/categories`, service({ Model: Category, id: 'slug' }));
+  app.use(`/api/countries`, service({ Model: Country, id: 'slug' }));
+  app.use(`/api/locations`, service({ Model: Location, id: 'slug' }));
 
-  setUpWithSlugAndId('articles', Article);
-  setUpWithSlugAndId('categories', Category);
-  setUpWithSlugAndId('countries', Country);
-  setUpWithSlugAndId('locations', Location);
 };

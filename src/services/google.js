@@ -11,14 +11,20 @@ const fileService = azure.createFileService();
 const blobService = azure.createBlobService();
 const mime = require('mime');
 const Promise = require("bluebird");
+const Bluebird = require("bluebird");
 const streamBuffers = require('stream-buffers');
 const slugify = require('speakingurl');
 import Jimp from 'jimp';
 import models from '../models';
+import yaml from 'js-yaml';
+import moment from 'moment';
+import querystring from 'querystring';
 
 const createContainerIfNotExists = Promise.promisify(blobService.createContainerIfNotExists).bind(blobService);
 const createAppendBlobFromText = Promise.promisify(blobService.createAppendBlobFromText).bind(blobService);
 const getBlobMetadata = Promise.promisify(blobService.getBlobMetadata).bind(blobService);
+
+const files = Bluebird.promisifyAll(drive.files);
 
 function retrieveAllFiles(auth, folder) {
     return new Promise((resolve, reject) => {
@@ -58,7 +64,11 @@ async function recurse(auth, root) {
         if (parent) {
             parent.children.push(fileDictionary[file.id]);
             if (file.parents && file.parents.indexOf(root) == -1) {
-                file.parentSlug = slugify(parent.name);
+                let parentName = parent.name;
+                if (parentName.indexOf('L|') > -1) {
+                    parentName = parentName.split('L|')[1].trim();
+                }
+                file.parentSlug = slugify(parentName);
             }
         }
 
@@ -74,6 +84,13 @@ async function recurse(auth, root) {
                 }
             } else if (file.mimeType == 'application/vnd.google-apps.document') {
                 file.type = 'article';
+            } else if (file.mimeType == 'application/octet-stream') {
+                if (file.name.toLowerCase() === "metadata.yaml") {
+                    file.type = 'metadata';
+                } else if (file.name.toLowerCase() === "links.yaml") {
+                    file.type = 'links';
+
+                }
             }
         }
 
@@ -91,10 +108,7 @@ async function recurse(auth, root) {
 
 
 
-    return _.flatMap(fileDictionary).map((f) => {
-        delete f.parents;
-        return f;
-    });
+    return _.flatMap(fileDictionary);
 }
 
 function recurse1(auth, root) {
@@ -114,157 +128,177 @@ function recurse1(auth, root) {
 
 
 
-function exportFile(auth, fileId) {
-    return new Promise((resolve, reject) => {
-
+async function exportFile(auth, fileId) {
+    let exported = await new Promise((resolve, reject) => {
         drive.files.export({
             auth,
             fileId,
             mimeType: "text/html"
-        }, (e2, r2) => {
-            const $ = cheerio.load(r2);
-
-            // Transforming styles to full HTML elements
-            $('[style]').each((i, e) => {
-                const weight = $(e).css('font-weight');
-                const textDecoration = $(e).css('text-decoration');
-                const fontStyle = $(e).css('font-style');
-                const verticalAlign = $(e).css('vertical-align');
-
-                let pa = null;
-                let ch = null;
-                const wrap = (t) => {
-                    let ch1 = $(t)
-                    if (pa) {
-                        if (ch) {
-                            ch.append(ch1);
-                        }
-                        ch = ch1;
-                    } else {
-                        pa = ch1;
-                        ch = ch1;
-                    }
-                }
-
-                if (weight > 400) {
-                    wrap('<strong />');
-                }
-                if (textDecoration == 'underline') {
-                    wrap('<u />');
-                }
-                if (fontStyle == 'italic') {
-                    wrap('<em />');
-                }
-                if (verticalAlign == 'super') {
-                    wrap('<sup />');
-                }
-                if (verticalAlign == 'sub') {
-                    wrap('<sub />');
-                }
-
-                if (pa && ch) {
-                    let { parent, children } = e;
-                    let c = $(children).clone();
-
-                    ch.append(children);
-                    $(e).replaceWith(pa);
-                }
-            });
-
-            // passing images through filters
-            let a = $('img').map((i, o) => {
-                let src = o.attribs.src;
-                return { src, obj: $(o) };
-            });
-            let promises = _.map(a, (i) => {
-                return new Promise((_resolve, _reject) => {
-                    Jimp.read(i.src, function (err, image) {
-                        if (err) throw err;
-
-                        let width = image.bitmap.width;
-                        if (width > 700) {
-                            width = 700;
-                            let ratio = image.bitmap.width / image.bitmap.height;
-                            let height = width * ratio;
-                            image = image.scaleToFit(width, height);
-                        }
-
-                        if ((image.bitmap.width / image.bitmap.height) < Math.sqrt(5)) {
-                            image = image.crop(0, 0, image.bitmap.width, image.bitmap.width / Math.sqrt(5));
-                        } else {
-                            image = image.scaleToFit(image.bitmap.width, image.bitmap.width / Math.sqrt(5));
-                        }
-
-                        image
-                            //.resize(256, 256)            // resize
-                            .quality(50)                 // set JPEG quality
-                            .getBuffer('image/jpeg', (a, b) => {
-                                let hash = image.hash();
-
-                                createContainerIfNotExists('ri-images')
-                                    .then((d) => {
-                                        return createAppendBlobFromText('ri-images', `${hash}.jpg`, b, b.length);
-                                    })
-                                    .then((f) => {
-                                        return getBlobMetadata('ri-images', `${hash}.jpg`);
-                                    }).then((m) => {
-                                        _resolve({
-                                            newSrc: blobService.getUrl('ri-images', m.name),
-                                            ...i
-                                        });
-                                    })
-                            }); // save
-                    });
-                })
-            });
-
-
-            // Removing unnecessary spans
-            $('* > span').each((i, e) => {
-                let { parent, children } = e;
-                let c = $(children).clone();
-                $(e).replaceWith(c);
-            });
-
-            // Removing formatting from everything but images
-            $('[style]:not(img)').each((i, e) => {
-                delete e.attribs['id'];
-                delete e.attribs['style'];
-                delete e.attribs['name'];
-            });
-
-            // Removing formatting from images
-            $('img').each((i, e) => e.attribs = { src: e.attribs.src, alt: e.attribs.alt });
-
-            // Removing empty spans, ps and divs
-            $('p > span:empty').remove();
-            $('p:empty').remove();
-            $('div:empty').remove();
-            $('sup:empty').remove();
-            $('sub:empty').remove();
-            $('em:empty').remove();
-            $('u:empty').remove();
-
-            // Removing GDocs Comments
-            $('div p a[id]').parent().parent().remove();
-            $('sup a[id]').remove();
-
-            $('p em').each((i, e) => {
-                if ($(e).parent().prev().has('img')) {
-                    $(e).addClass('caption');
-                }
-            })
-
-
-            Promise.all(promises).then((p) => {
-
-                p.forEach((v) => {
-                    $(`[src='${v.src}']`).attr('src', v.newSrc);
-                })
-                resolve($('body').html());
-            });
+        }, (err, res) => {
+            if (err) {
+                return reject(err);
+            }
+            return resolve(res);
         });
+    })
+
+
+    let metadata = await new Promise((resolve, reject) => {
+        drive.files.get({
+            auth,
+            fileId,
+            fields: 'id, name, modifiedTime'
+        }, (err, res) => {
+            if (err) {
+                return reject(err);
+            }
+
+            return resolve(res);
+        });
+    })
+
+    console.log(exported,'\n\n');
+    const $ = cheerio.load(exported);
+
+    // Transforming styles to full HTML elements
+    $('[style]').each((i, e) => {
+        const weight = $(e).css('font-weight');
+        const textDecoration = $(e).css('text-decoration');
+        const fontStyle = $(e).css('font-style');
+        const verticalAlign = $(e).css('vertical-align');
+
+        let pa = null;
+        let ch = null;
+        const wrap = (t) => {
+            let ch1 = $(t)
+            if (pa) {
+                if (ch) {
+                    ch.append(ch1);
+                }
+                ch = ch1;
+            } else {
+                pa = ch1;
+                ch = ch1;
+            }
+        }
+
+        if (weight > 400) {
+            wrap('<strong />');
+        }
+        if (textDecoration == 'underline') {
+            wrap('<u />');
+        }
+        if (fontStyle == 'italic') {
+            wrap('<em />');
+        }
+        if (verticalAlign == 'super') {
+            wrap('<sup />');
+        }
+        if (verticalAlign == 'sub') {
+            wrap('<sub />');
+        }
+
+        if (pa && ch) {
+            let { parent, children } = e;
+            let c = $(children).clone();
+
+            ch.append(children);
+            $(e).replaceWith(pa);
+        }
     });
+
+    // passing images through filters
+    let a = $('img').map((i, o) => {
+        let src = o.attribs.src;
+        return { src, obj: $(o) };
+    });
+    let promises = _.map(a, (i) => {
+        return new Promise((_resolve, _reject) => {
+            Jimp.read(i.src, function (err, image) {
+                if (err) throw err;
+
+                let width = image.bitmap.width;
+                if (width > 700) {
+                    width = 700;
+                    let ratio = image.bitmap.width / image.bitmap.height;
+                    let height = width * ratio;
+                    image = image.scaleToFit(width, height);
+                }
+
+                if ((image.bitmap.width / image.bitmap.height) < (16 / 9)) {
+                    image = image.crop(0, 0, image.bitmap.width, image.bitmap.width / (16 / 9));
+                } else {
+                    image = image.scaleToFit(image.bitmap.width, image.bitmap.width / (16 / 9));
+                }
+
+                image
+                    .quality(50)
+                    .getBuffer('image/jpeg', (a, b) => {
+                        let hash = image.hash();
+
+                        createContainerIfNotExists('ri-images')
+                            .then((d) => {
+                                return createAppendBlobFromText('ri-images', `${hash}.jpg`, b, b.length);
+                            })
+                            .then((f) => {
+                                return getBlobMetadata('ri-images', `${hash}.jpg`);
+                            }).then((m) => {
+                                _resolve({
+                                    newSrc: blobService.getUrl('ri-images', m.name),
+                                    ...i
+                                });
+                            })
+                    }); // save
+            });
+        })
+    });
+
+
+    // Removing unnecessary spans
+    $('* > span').each((i, e) => {
+        let { parent, children } = e;
+        let c = $(children).clone();
+        $(e).replaceWith(c);
+    });
+
+    // Removing formatting from everything but images
+    $('[style]:not(img)').each((i, e) => {
+        delete e.attribs['id'];
+        delete e.attribs['style'];
+        delete e.attribs['name'];
+    });
+
+    // Removing formatting from images
+    $('img').each((i, e) => e.attribs = { src: e.attribs.src, alt: e.attribs.alt });
+
+    // Removing empty spans, ps and divs
+    $('p > span:empty').remove();
+    $('p:empty').remove();
+    $('div:empty').remove();
+    $('sup:empty').remove();
+    $('sub:empty').remove();
+    $('em:empty').remove();
+    $('u:empty').remove();
+
+    // Removing GDocs Comments
+    $('div p a[id]').parent().parent().remove();
+    $('sup a[id]').remove();
+
+    $('p em').each((i, e) => {
+        if ($(e).parent().prev().has('img')) {
+            $(e).addClass('caption');
+        }
+    });
+
+    let images = await Promise.all(promises);
+
+    images.forEach((v) => {
+        $(`[src='${v.src}']`).attr('src', v.newSrc);
+    })
+    return {
+        html: $('body').html(),
+        metadata
+    };
 }
 
 function listFiles(auth, oid) {
@@ -281,8 +315,6 @@ function listFiles(auth, oid) {
             const { files } = r;
             const fileId = files[0].id;
             oid = oid || files[0].id;
-
-            console.log(fileId);
 
             resolve(oid);
         });
@@ -348,22 +380,29 @@ export default {
     utils: {
         generateDocument: (id) => {
             return loadKey()
-                .then((auth) => exportFile(auth, id).then((h) => {
-                    const $ = cheerio.load(h);
+                .then((auth) => exportFile(auth, id).then(({ html, metadata }) => {
+                    const $ = cheerio.load(html);
                     const title = $('.title').remove();
                     const subtitle = $('.subtitle').remove();
                     const hero = $('img', subtitle).remove();
+
                     return {
                         slug: slugify(title.html()),
                         title: title.html(),
                         lede: subtitle.html(),
                         hero: hero.attr('src'),
-                        body: $('body').html()
+                        body: $('body').html(),
                     }
                 }));
         }
     },
     driveService: (db) => ({
+        find_: async () => {
+            let key = await loadKey();
+            let documents = await recurse(key, "0B-lKSEVt5tJeamY2d3ZBRlJEMXc");
+
+            return documents;
+        },
         find: (params) => {
             return loadKey()
                 .then((k) => {
@@ -374,9 +413,52 @@ export default {
                             return c;
                         };
 
+                        let allRaw = _.flattenDeep(
+                            files // Level 0
+                                .concat(files.map(f => f.children)) // Level 1
+                                .concat(files.map(f => f.children.map(c => c.children))) // Level 2
+                                .concat(files.map(f => f.children.map(c => c.children.map(t => t.children)))) // Level 3
+                        );
+                        let all = _.keyBy(allRaw, k => k.slug);
+                        let allById = _.keyBy(allRaw, k => k.id);
+                        let links = allRaw.filter(c => c.type == 'links');
+
+                        for (let link of links) {
+                            let promise = new Promise((resolve, reject) => {
+                                drive.files.get({
+                                    auth: k,
+                                    fileId: link.id,
+                                    alt: 'media'
+                                }, (err, resp) => {
+                                    if (err) {
+                                        reject(err);
+                                    }
+
+                                    resolve(resp);
+                                });
+                            });
+
+                            let linkParentId = _.first(link.parents);
+                            let linkParent = allById[linkParentId];
+                            let articlesBySlug = _.keyBy(allRaw.filter(c => c.type === 'article'), (a) => a.slug);
+
+                            let articleLinks = yaml.safeLoad(await promise);
+                            for (let articleLink of articleLinks) {
+                                let article = articlesBySlug[articleLink];
+                                let clone = _.cloneDeep(article);
+                                clone.parents = [linkParentId];
+                                linkParent.children.push(clone);
+                            }
+                        }
+
+
                         let firstLevel = _.flatten(countries.map((c) => c.children));
                         let secondLevel = _.flatten(firstLevel.map((c) => c.children));
                         let thirdLevel = _.flatten(secondLevel.map((c) => c.children));
+
+                        let articles = allRaw.filter(c => c.type == 'article');
+                        let metadata = allRaw.filter(c => c.type == 'metadata');
+                        let articlesById = _.keyBy(articles, (a) => a.id);
 
                         const { Country, Category, Article, Location } = models(db);
                         const importCategories = async (categoryFolder) => {
@@ -394,6 +476,9 @@ export default {
                             let category = await Category.findOne({ slug: subFolder.slug });
                             let articles = [];
                             for (let articleFile of subFolder.children) {
+                                if (articleFile.type !== 'article')
+                                    continue;
+
                                 let article = await Article.findOne({ slug: articleFile.slug });
                                 articles.push(article);
 
@@ -434,6 +519,7 @@ export default {
                                 Object.assign(obj, { name, slug });
 
                                 await obj.save();
+
                             }
                         }
 
@@ -443,21 +529,50 @@ export default {
                             }
                         }
 
-                        let articles = _.flatten(secondLevel.concat(thirdLevel)).filter(c => c.type == 'article');
-
                         for (let articleFile of articles) {
-                            let html = await exportFile(k, articleFile.id);
+                            let { html, metadata } = await exportFile(k, articleFile.id);
 
                             const $ = cheerio.load(html);
                             const title = $('.title').remove();
                             const subtitle = $('.subtitle').remove();
                             const hero = $('img', subtitle).remove();
+
+                            const links = $('a');
+                            links.each((k, l) => {
+                                let { href } = l.attribs;
+
+                                if (href.indexOf('?') > -1) {
+                                    let qs = querystring.parse(href.substring(href.indexOf('?') + 1));
+
+                                    $(l).attr('href', qs.q);
+
+                                    if (qs.q.indexOf('drive.google.com') > -1) {
+                                        qs = querystring.parse(qs.q.substring(qs.q.indexOf('?') + 1));
+                                        if (qs.id in articlesById) {
+                                            let linkedArticle = articlesById[qs.id];
+                                            let parentSlug = linkedArticle.parentSlug;
+                                            let url = [linkedArticle.slug];
+
+                                            while (parentSlug) {
+                                                url.push(parentSlug);
+                                                let parent = all[parentSlug];
+                                                parentSlug = parent.parentSlug;
+                                            }
+
+                                            url.push('');
+                                            $(l).attr('href', url.reverse().join('/'));
+                                        }
+                                    }
+                                }
+                            });
+
                             let articlePayload = {
                                 slug: slugify(articleFile.name),
                                 title: title.html(),
                                 lede: subtitle.html(),
                                 hero: hero.attr('src'),
-                                body: $('body').html()
+                                body: $('body').html(),
+                                date: moment(metadata.modifiedTime).toDate(),
                             };
 
 
@@ -465,19 +580,52 @@ export default {
                             if (!article) {
                                 article = new Article(articlePayload);
                             }
+
                             Object.assign(article, { ...articlePayload });
 
                             await article.save();
                         }
 
+                        for (let meta of metadata) {
+                            let promise = new Promise((resolve, reject) => {
+                                drive.files.get({
+                                    auth: k,
+                                    fileId: meta.id,
+                                    alt: 'media'
+                                }, (err, resp) => {
+                                    if (err) {
+                                        reject(err);
+                                    }
+
+                                    resolve(resp);
+                                });
+                            });
+
+                            let result = yaml.safeLoad(await promise);
 
 
+                            let parent = all[meta.parentSlug];
+                            let parentObject = null;
+                            if (parent.type === 'location') {
+                                parentObject = await Location.findOne({ slug: parent.slug });
+                            } else if (parent.type === 'category') {
+                                parentObject = await Category.findOne({ slug: parent.slug });
+                            } else if (parent.type === 'country') {
+                                parentObject = await Country.findOne({ slug: parent.slug });
+                            }
+
+                            if (parentObject) {
+                                parentObject = Object.assign(parentObject, result);
+                                await parentObject.save();
+                            }
+                        }
 
                         let content = [];
                         let locations = [];
                         for (let countryFolder of countries) {
                             let country = await Country.findOne({ slug: countryFolder.slug });
                             country.content = [];
+                            country.locations = [];
                             for (let subFolder of countryFolder.children) {
                                 if (subFolder.type == 'category') {
                                     const { category, articles } = await generateCategoryContent(subFolder)
@@ -487,7 +635,7 @@ export default {
                                         articles: articles.filter(_.identity).map(a => a._id)
                                     });
                                 } else if (subFolder.type == 'location') {
-                                    let location =  await Location.findOne({ slug: subFolder.slug });
+                                    let location = await Location.findOne({ slug: subFolder.slug });
                                     if (!location) {
                                         console.log('didnt find', subFolder.slug);
                                         continue;
@@ -496,7 +644,7 @@ export default {
                                         location: location._id,
                                         content: []
                                     }
-                                    for (let subSubFolder of subFolder.children) {
+                                    for (let subSubFolder of subFolder.children.filter(c => c.type == 'category')) {
                                         const { category, articles } = await generateCategoryContent(subSubFolder)
 
                                         locationPayload.content.push({
