@@ -25,6 +25,8 @@ var categorySchema = new Schema({
         name: String,
     }],
     type: { type: String, default: "topic" },
+    iconClass: String,
+    iconText: String,
     home: Object,
 });
 
